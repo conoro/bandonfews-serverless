@@ -16,10 +16,16 @@ serverless deploy
 
 Notes: 
 1. You can also invoke it manually by accessing the GET URL returned by the successful serverless deploy
-2. You can check logs with: 
+2. You can check manually invoked logs with: 
 
 ```bash
 serverless logs -f check
+```
+
+and Cron logs with
+
+```bash
+serverless logs -f cron
 ```
 
 3. If you make minor changes to just the function code, you can do a quick re-deploy with: 
