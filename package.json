@@ -1,0 +1,27 @@
+{
+  "name": "bandonfews-serverless",
+  "description":
+    "A Serverless AWS Lambda function that runs every 15 minutes, checks the Bandon river level at http://www.bandonfloodwarning.ie/ and saves it to Google Fusion Tables",
+  "version": "1.0.0",
+  "author": {
+    "name": "Conor O'Neill",
+    "email": "conor@conoroneill.com",
+    "url": "https://github.com/conoro"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/conoro/bandonfews-serverless.git"
+  },
+  "keywords": ["flood", "cork", "bandon", "river", "fews", "fusion tables"],
+  "licenses": [
+    {
+      "type": "Apache-2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0"
+    }
+  ],
+  "dependencies": {
+    "aws-sdk": "^2.149.0",
+    "serverless-dynamodb-local": "^0.2.26",
+    "serverless-offline": "^3.16.0"
+  }
+}
