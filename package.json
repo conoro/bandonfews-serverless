@@ -19,19 +19,12 @@
     "fews",
     "fusion tables"
   ],
-  "licenses": [
-    {
-      "type": "Apache-2.0",
-      "url": "https://www.apache.org/licenses/LICENSE-2.0"
-    }
-  ],
+  "license": "Apache-2.0",
   "dependencies": {
     "aws-sdk": "^2.149.0",
     "cheerio": "^1.0.0-rc.2",
     "googleapis": "^22.2.0",
     "moment": "^2.19.2",
-    "request": "^2.83.0",
-    "serverless-dynamodb-local": "^0.2.26",
-    "serverless-offline": "^3.16.0"
+    "request": "^2.83.0"
   }
 }
