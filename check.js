@@ -4,116 +4,142 @@
 
 "use strict";
 
-const AWS = require("aws-sdk"); 
-
-const dynamoDb = new AWS.DynamoDB.DocumentClient();
+const AWS = require("aws-sdk");
 
 module.exports.check = (event, context, callback) => {
-  var prevTime;
-  var currTime = new Date().getTime();
+  var google = require("googleapis");
+  var fusiontables = google.fusiontables("v2");
 
-  console.log("DisSlack ran on ", new Date().toUTCString());
+  var moment = require("moment");
+  var request = require("request");
+  var cheerio = require("cheerio");
 
-  const setParams = {
-    TableName: process.env.DYNAMODB_TABLE,
-    Item: {
-      id: "1",
-      updatedAt: currTime
-    }
-  };
+  var gerr;
+  var gstat;
 
-  const getParams = {
-    TableName: process.env.DYNAMODB_TABLE,
-    Key: {
-      id: "1"
-    }
-  };
+  var key = require("./jwt_key.json");
+  var jwtClient = new google.auth.JWT(
+    key.client_email,
+    null,
+    key.private_key,
+    ["https://www.googleapis.com/auth/fusiontables"], // an array of auth scopes
+    null
+  );
 
-  dynamoDb.get(getParams, (error, result) => {
-    // See if this is first time run. If so, don't process, just save timestamp for next run
-    if (error || result.Item == null) {
-      console.error(error);
+  jwtClient.authorize(function(err, tokens) {
+    if (err) {
+      console.log(err);
+      gerr = err;
     } else {
-      // extract prev run time from DB
-      prevTime = result.Item.updatedAt;
+      // Get current water level and last update time
+      request(process.env.FEWS_URL, function(error, response, body) {
+        if (error) {
+          console.log("error back from Bandon FEWS", error);
+          gerr = error;
+        } else {
+          var $ = cheerio.load(body);
+          var waterLevel = $("td")
+            .eq(8)
+            .text()
+            .trim();
+          // Make sure we parsed a number. If not, do not save in Fusion Tables
+          if (!isNaN(waterLevel)) {
+            console.log(waterLevel);
+            var lastUpdate = $("div")
+              .eq(1)
+              .text()
+              .trim()
+              .split(" ");
+            if (lastUpdate) {
+              var lastMoment = moment(
+                lastUpdate[1] +
+                  " " +
+                  lastUpdate[2].substring(0, lastUpdate[2].length - 1) +
+                  " " +
+                  lastUpdate[3] +
+                  " " +
+                  lastUpdate[5] +
+                  " GMT",
+                "DD MMM YYYY HH:mm z"
+              );
+              var fusionDate = lastMoment.format("DD-MMM-YYYY HH:mm");
 
-      var disqus = new Disqus({
-        api_secret: process.env.DISSLACK_DISQUS_API_SECRET,
-        api_key: process.env.DISSLACK_DISQUS_API_KEY,
-        access_token: process.env.DISSLACK_DISQUS_ACCESS_TOKEN
-      });
+              var checkLast =
+                "SELECT * FROM " +
+                process.env.FUSIONTABLES_ID +
+                " WHERE datetime='" +
+                fusionDate +
+                "'";
 
-      var IncomingWebhook = require("@slack/client").IncomingWebhook;
-      var url = process.env.DISSLACK_SLACK_WEBHOOK || "";
-      var webhook = new IncomingWebhook(url);
-
-      disqus.request(
-        "posts/list",
-        { forum: process.env.DISSLACK_DISQUS_FORUM, related: "thread" },
-        function(data) {
-          if (data.error) {
-            console.error("Something went wrong...", err);
-          } else {
-            var response = JSON.parse(data).response;
-
-            if (!response.length) {
-              return console.log("[" + forum + "] No comments found.");
-            }
-
-            var lastCommentTime = new Date(prevTime);
-
-            var i;
-            for (i = 0; i < response.length; i++) {
-              var commentTime = new Date(response[i].createdAt);
-              var url = response[i].thread.link + "#comment-" + response[i].id;
-
-              var message =
-                response[i].author.name +
-                " blog received <" +
-                url +
-                "|a new comment> " +
-                "on <" +
-                response[i].thread.link +
-                "|" +
-                response[i].thread.title +
-                ">:" +
-                "\n" +
-                response[i].raw_message.substr(0, 100);
-
-              if (commentTime > lastCommentTime) {
-                webhook.send(message, function(err, header, statusCode, body) {
+              fusiontables.query.sqlGet(
+                {
+                  auth: jwtClient,
+                  sql: checkLast
+                },
+                function(err, resp) {
                   if (err) {
-                    console.log("Error:", err);
+                    console.log("A query error occured", err);
+                    gerr = err;
                   } else {
-                    console.log("Sent", message, "to Slack");
-                    console.log("Received", statusCode, "from Slack");
+                    // if not in Fusion Tables then insert
+                    if (!resp.rows) {
+                      var insertNew =
+                        "INSERT INTO " +
+                        process.env.FUSIONTABLES_ID +
+                        " (riverlevel, datetime) VALUES ('" +
+                        waterLevel +
+                        "', '" +
+                        fusionDate +
+                        "')";
+
+                      fusiontables.query.sql(
+                        {
+                          auth: jwtClient,
+                          sql: insertNew
+                        },
+                        function(err, resp) {
+                          if (err) {
+                            console.log("An insert error occured", err);
+                            gerr = err;
+                          } else {
+                            console.log("inserted new row", resp.rows[0]);
+                            gstat = "inserted new row";
+                          }
+                        }
+                      );
+                    } else {
+                      console.log("no new updates");
+                      gstat = "no new updates";
+                    }
                   }
-                });
-              }
+                }
+              );
+            } else {
+              console.log("error parsing the datetime");
+              gerr = "error parsing the datetime";
             }
+          } else {
+            console.log("error parsing the water level");
+            gerr = "error parsing the water level";
           }
         }
-      );
+      });
     }
-    // write the time to the database
-    dynamoDb.put(setParams, error => {
-      // handle potential errors
-      if (error) {
-        console.error(error);
-        callback(null, {
-          statusCode: error.statusCode || 501,
-          headers: { "Content-Type": "text/plain" },
-          body: "Couldn't save timestamp in DB"
-        });
-        return;
-      } else {
-        // create a response
-        const response = {
-          statusCode: 200,
-          body: "Checked Disqus OK"
-        };
-        callback(null, response);
-      }
-    });
+
+    if (gerr) {
+      callback(null, {
+        statusCode: error.statusCode || 501,
+        headers: { "Content-Type": "text/plain" },
+        body: gerr
+      });
+      return;
+    } else {
+      // create a response
+      const response = {
+        statusCode: 200,
+        body: gstat
+      };
+      callback(null, response);
+    }
   });
 };
