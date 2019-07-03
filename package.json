@@ -25,6 +25,12 @@
     "cheerio": "^1.0.0-rc.2",
     "googleapis": "^22.2.0",
     "moment": "^2.19.2",
-    "request": "^2.83.0"
-  }
+    "request": "^2.83.0",
+    "snyk": "^1.189.0"
+  },
+  "scripts": {
+    "snyk-protect": "snyk protect",
+    "prepublish": "npm run snyk-protect"
+  },
+  "snyk": true
 }
